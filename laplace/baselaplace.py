@@ -5,7 +5,7 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
-from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate
+from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate, _is_batchnorm
 from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
 
@@ -103,7 +103,7 @@ class BaseLaplace(ABC):
         if self.H is None:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
-    def fit(self, train_loader, only_diff_last=None, **kwargs):
+    def fit(self, train_loader, only_diff_last=None, train_mask=None, **kwargs):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -125,11 +125,12 @@ class BaseLaplace(ABC):
 
         X, _ = next(iter(train_loader))
         with torch.no_grad():
-            self.n_outputs = self.model(X[:1].to(self._device)).shape[-1]
+            self.n_outputs = self.model(X.to(self._device)).shape[-1]
         setattr(self.model, 'output_size', self.n_outputs)
         original_backend_diff = self.backend.differentiable
 
-        N = len(train_loader.dataset)
+        N = len(train_loader.dataset) if train_mask is None \
+            else train_mask.sum()
         N_batches = len(train_loader)
         for batch_i, (X, y) in enumerate(train_loader):
             self.model.zero_grad()
@@ -137,20 +138,23 @@ class BaseLaplace(ABC):
             detach_batch = (only_diff_last is not None) and (batch_i + only_diff_last < N_batches)
 
             if detach_batch:
-                X = X.detach()
+                # X = X.detach()
+                self.model.disable_graph_builder_grad()
                 self.backend.differentiable = False
             else:
                 self.backend.differentiable = original_backend_diff
+                if self.backend.differentiable:
+                    self.model.enable_graph_builder_grad()
 
-            loss_batch, H_batch = self._curv_closure(X, y, N)
+            loss_batch, H_batch = self._curv_closure(X, y, N, mask=train_mask)
             self.loss += loss_batch
             self.H += H_batch
 
         self.backend.differentiable = original_backend_diff
         self.n_data = N
 
-    def fit_partial(self, X, y):
-        loss_batch, H_batch = self._curv_closure(X, y, self.n_data)
+    def fit_partial(self, X, y, train_mask=None):
+        loss_batch, H_batch = self._curv_closure(X, y, self.n_data, mask=train_mask)
         self.loss = self.loss.detach() - loss_batch.detach() + loss_batch
         self.H = self.H.detach() - H_batch.detach() + H_batch
 
@@ -646,8 +650,8 @@ class FullLaplace(BaseLaplace):
     def _init_H(self):
         self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
 
-    def _curv_closure(self, X, y, N):
-        return self.backend.full(X, y, N=N)
+    def _curv_closure(self, X, y, N, mask=None):
+        return self.backend.full(X, y, N=N, mask=mask)
 
     def _compute_scale(self):
         self._posterior_scale = invsqrt_precision(self.posterior_precision)
@@ -727,21 +731,21 @@ class KronLaplace(BaseLaplace):
     def _init_H(self):
         self.H = Kron.init_from_model(self.model, self._device)
 
-    def _curv_closure(self, X, y, N):
-        return self.backend.kron(X, y, N=N)
+    def _curv_closure(self, X, y, N, mask=None):
+        return self.backend.kron(X, y, N=N, mask=mask)
 
-    def fit(self, train_loader, only_diff_last=None, diff_on_cpu=False, keep_factors=False):
-        super().fit(train_loader, only_diff_last=only_diff_last, diff_on_cpu=diff_on_cpu)
+    def fit(self, train_loader, train_mask=None, only_diff_last=None, diff_on_cpu=False, keep_factors=False):
+        super().fit(train_loader, train_mask=train_mask, only_diff_last=only_diff_last, diff_on_cpu=diff_on_cpu)
         # Kron requires postprocessing as all quantities depend on the decomposition.
         if keep_factors:
             self.H_facs = self.H
         self.H = self.H.decompose(damping=self.damping)
 
-    def fit_partial(self, X, y):
+    def fit_partial(self, X, y, train_mask=None):
         if not hasattr(self, 'H_facs'):
             raise ValueError('Need keep_factors=True on fit for partial fit.')
         self.H = self.H_facs
-        super().fit_partial(X, y)
+        super().fit_partial(X, y, train_mask=train_mask)
         self.H_facs = self.H
         self.H = self.H.decompose(damping=self.damping)
 
@@ -788,8 +792,8 @@ class DiagLaplace(BaseLaplace):
     def _init_H(self):
         self.H = torch.zeros(self.n_params, device=self._device)
 
-    def _curv_closure(self, X, y, N):
-        return self.backend.diag(X, y, N=N)
+    def _curv_closure(self, X, y, N, mask=None):
+        return self.backend.diag(X, y, N=N, mask=mask)
 
     @property
     def posterior_precision(self):

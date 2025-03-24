@@ -121,9 +121,12 @@ class BackPackGGN(BackPackInterface, GGNInterface):
                 F[1] *= M/N
         return kron
 
-    def diag(self, X, y, **kwargs):
+    def diag(self, X, y, mask=None, **kwargs):
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(X)
+        if mask is not None:
+            f = f[mask]
+            y = y[mask]
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward(**self.backward_kwargs)
@@ -133,9 +136,12 @@ class BackPackGGN(BackPackInterface, GGNInterface):
             return self.factor * loss, self.factor * dggn
         return self.factor * loss.detach(), self.factor * dggn.detach()
 
-    def kron(self, X, y, N, **kwargs):
+    def kron(self, X, y, N, mask=None, **kwargs):            
         context = KFAC if self.stochastic else KFLR
         f = self.model(X)
+        if mask is not None:
+            f = f[mask]
+            y = y[mask]
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward(**self.backward_kwargs)
@@ -151,8 +157,11 @@ class BackPackEF(BackPackInterface, EFInterface):
     """Implementation of `EFInterface` using Backpack.
     """
 
-    def diag(self, X, y, **kwargs):
+    def diag(self, X, y, mask=None, **kwargs):
         f = self.model(X)
+        if mask is not None:
+            f = f[mask]
+            y = y[mask]
         loss = self.lossfunc(f, y)
         with backpack(SumGradSquared()):
             loss.backward(**self.backward_kwargs)

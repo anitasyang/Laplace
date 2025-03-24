@@ -230,7 +230,7 @@ class GGNInterface(CurvatureInterface):
             return loss, H_ggn
         return loss.detach(), H_ggn.detach()
 
-    def full(self, x, y, **kwargs):
+    def full(self, x, y, mask=None, **kwargs):
         """Compute the full GGN \\(P \\times P\\) matrix as Hessian approximation
         \\(H_{ggn}\\) with respect to parameters \\(\\theta \\in \\mathbb{R}^P\\).
         For last-layer, reduced to \\(\\theta_{last}\\)
@@ -248,6 +248,7 @@ class GGNInterface(CurvatureInterface):
         H_ggn : torch.Tensor
             GGN `(parameters, parameters)`
         """
+        raise NotImplementedError  #  TODO: support masking
         if self.stochastic:
             raise ValueError('Stochastic approximation not implemented for full GGN.')
 

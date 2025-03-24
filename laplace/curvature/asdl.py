@@ -109,28 +109,37 @@ class AsdlInterface(CurvatureInterface):
                 F[1] *= 1/N
         return kron
 
-    def diag(self, X, y, **kwargs):
+    def diag(self, X, y, mask=None, **kwargs):
         if self.last_layer:
             f, X = self.model.forward_with_features(X)
         else:
             f = self.model(X)
-        loss = self.lossfunc(f, y)
+
         curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_DIAG,
-                                        inputs=X, targets=y, **self.backward_kwargs)
+                                        inputs=X, targets=y, mask=mask,
+                                        **self.backward_kwargs)
+        if mask is not None:
+            f = f[mask]
+            y = y[mask]
+        loss = self.lossfunc(f, y)
         diag_ggn = curv.matrices_to_vector(None)
 
         if self.differentiable:
             return self.factor * loss, self.factor * diag_ggn
         return self.factor * loss.detach(), self.factor * diag_ggn.detach()
 
-    def kron(self, X, y, N, **kwargs):
+    def kron(self, X, y, N, mask=None, **kwargs):
         if self.last_layer:
             f, X = self.model.forward_with_features(X)
         else:
             f = self.model(X)
-        loss = self.lossfunc(f, y)
+        
         curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_KRON,
-                                        inputs=X, targets=y, **self.backward_kwargs)
+                                        inputs=X, targets=y, mask=mask, **self.backward_kwargs)
+        if mask is not None:
+            f = f[mask]
+            y = y[mask]
+        loss = self.lossfunc(f, y)
         M = len(y)
         kron = self._get_kron_factors(curv, M)
         kron = self._rescale_kron_factors(kron, N)
