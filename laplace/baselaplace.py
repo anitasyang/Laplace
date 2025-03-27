@@ -123,6 +123,9 @@ class BaseLaplace(ABC):
 
         self.model.eval()
 
+        # check if graph is to be updated
+        diff_graph = any([p.requires_grad for p in self.model.graph_builder.parameters()])
+
         X, _ = next(iter(train_loader))
         with torch.no_grad():
             self.n_outputs = self.model(X.to(self._device)).shape[-1]
@@ -137,7 +140,7 @@ class BaseLaplace(ABC):
             X, y = X.to(self._device), y.to(self._device)
             detach_batch = (only_diff_last is not None) and (batch_i + only_diff_last < N_batches)
 
-            if detach_batch:
+            if detach_batch or not diff_graph:
                 # X = X.detach()
                 self.model.disable_graph_builder_grad()
                 self.backend.differentiable = False
