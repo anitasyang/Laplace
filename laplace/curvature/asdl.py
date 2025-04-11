@@ -111,16 +111,16 @@ class AsdlInterface(CurvatureInterface):
 
     def diag(self, X, y, mask=None, **kwargs):
         if self.last_layer:
-            f, X = self.model.forward_with_features(X)
-        else:
-            f = self.model(X)
+            _f, X = self.model.forward_with_features(X)
+            _f = _f[mask] if mask is not None else _f
 
-        curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_DIAG,
+        f, curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_DIAG,
                                         inputs=X, targets=y, mask=mask,
                                         **self.backward_kwargs)
-        if mask is not None:
-            f = f[mask]
-            y = y[mask]
+        if self.last_layer:
+            f = _f
+        y = y[mask] if mask is not None else y
+
         loss = self.lossfunc(f, y)
         diag_ggn = curv.matrices_to_vector(None)
 
@@ -130,15 +130,15 @@ class AsdlInterface(CurvatureInterface):
 
     def kron(self, X, y, N, mask=None, **kwargs):
         if self.last_layer:
-            f, X = self.model.forward_with_features(X)
-        else:
-            f = self.model(X)
-        
-        curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_KRON,
+            _f, X = self.model.forward_with_features(X)
+            _f = _f[mask] if mask is not None else _f
+         
+        f, curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_KRON,
                                         inputs=X, targets=y, mask=mask, **self.backward_kwargs)
-        if mask is not None:
-            f = f[mask]
-            y = y[mask]
+        if self.last_layer:
+            f = _f
+        y = y[mask] if mask is not None else y
+
         loss = self.lossfunc(f, y)
         M = len(y)
         kron = self._get_kron_factors(curv, M)
