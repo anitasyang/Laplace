@@ -193,8 +193,9 @@ class BaseLaplace(ABC):
             if self.likelihood != 'regression':
                 raise ValueError('Can only change sigma_noise for regression.')
             self.sigma_noise = sigma_noise
-
-        return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
+        
+        # lgo_margli = self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
+        return self.log_likelihood, 0.5 * (self.log_det_ratio + self.scatter)
 
     @property
     def log_likelihood(self):
