@@ -158,8 +158,10 @@ class BaseLaplace(ABC):
 
     def fit_partial(self, X, y, train_mask=None):
         loss_batch, H_batch = self._curv_closure(X, y, self.n_data, mask=train_mask)
-        self.loss = self.loss.detach() - loss_batch.detach() + loss_batch
-        self.H = self.H.detach() - H_batch.detach() + H_batch
+        self.loss = loss_batch  # doing full batch
+        self.H = H_batch  # doing full batch
+        # self.loss = self.loss.detach() - loss_batch.detach() + loss_batch
+        # self.H = self.H.detach() - H_batch.detach() + H_batch
 
     def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
         """Compute the Laplace approximation to the log marginal likelihood subject
